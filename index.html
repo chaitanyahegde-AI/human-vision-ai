@@ -1,0 +1,352 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Human Vision AI — Real-time Mood</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <style>
+    :root{
+      --bg:#f5f7fb; --card:#ffffff; --muted:#667085; --accent:#2563eb;
+      --success:#16a34a; --warning:#f97316; --danger:#ef4444; --info:#0ea5e9;
+      --glass: rgba(255,255,255,0.6);
+      --radius:12px;
+    }
+    *{box-sizing:border-box}
+    body{font-family:Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial;
+         margin:0; background:linear-gradient(180deg,#f7f9fc 0%, var(--bg) 100%); color:#0f172a;}
+    .app{
+      max-width:1280px; margin:28px auto; padding:24px; display:grid; gap:20px;
+      /* three columns: camera, info, quotes */
+      grid-template-columns: 720px 360px 360px;
+    }
+
+    /* Left panel: camera */
+    .viewer { background:var(--card); border-radius:var(--radius); padding:16px; box-shadow:0 6px 20px rgba(12,20,44,0.06);}
+    .viewer-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:12px}
+    .title {font-weight:700; font-size:16px}
+    .controls {display:flex; gap:8px}
+    button.btn{border:0; padding:8px 12px; border-radius:10px; cursor:pointer; font-weight:600}
+    .btn.primary{background:var(--accent); color:white}
+    .btn.ghost{background:transparent; color:var(--muted); border:1px solid #e6e9ef}
+    .btn:disabled{opacity:.5; cursor:not-allowed}
+
+    .video-wrap{position:relative;border-radius:8px; overflow:hidden; background:#000; display:flex; align-items:center; justify-content:center;}
+    video{width:720px;height:540px; display:block; object-fit:cover}
+    canvas#overlay{position:absolute; left:0; top:0; width:720px;height:540px; pointer-events:none}
+
+    .status{margin-top:10px; color:var(--muted); font-size:13px}
+
+    /* Right / middle panel: info */
+    .panel { display:flex; flex-direction:column; gap:12px }
+    .card{background:var(--card); padding:14px; border-radius:12px; box-shadow:0 6px 20px rgba(12,20,44,0.04)}
+    .live {display:flex; align-items:center; gap:12px}
+    .badge { padding:8px 14px; border-radius:999px; font-weight:700; color:white; text-transform:capitalize; min-width:120px; text-align:center; }
+    .badge.happy{background:var(--success)}
+    .badge.surprised{background:var(--warning)}
+    .badge.shocked{background:#ff5722}
+    .badge.sad{background:var(--info)}
+    .badge.angry{background:var(--danger)}
+    .badge.neutral{background:#6b7280}
+
+    .metrics{display:flex; gap:8px; margin-top:12px; flex-wrap:wrap}
+    .metric{background:linear-gradient(180deg, rgba(0,0,0,0.02), rgba(0,0,0,0.01)); padding:10px 12px; border-radius:10px; min-width:120px; font-size:13px}
+    .metric .val{font-weight:700; font-size:18px; margin-top:6px}
+
+    .history{max-height:220px; overflow:auto; display:flex; flex-direction:column; gap:8px}
+    .hist-item{display:flex; justify-content:space-between; align-items:center; padding:8px 10px; border-radius:8px; background:linear-gradient(90deg, rgba(12,20,44,0.02), rgba(12,20,44,0.01)); font-size:13px}
+    .footer{font-size:12px; color:var(--muted); text-align:center; padding:8px}
+
+    /* Quotes column */
+    .quotes-col{display:flex; flex-direction:column; gap:12px}
+    .quote-big{font-size:15px; line-height:1.45; padding:14px; border-radius:10px; background:linear-gradient(180deg, rgba(37,99,235,0.05), rgba(37,99,235,0.02)); color:#0f172a}
+    .quote-list{display:flex; flex-direction:column; gap:8px; margin-top:8px}
+    .quote-item{padding:10px 12px; border-radius:8px; background:rgba(0,0,0,0.03); font-size:13px}
+    .small-muted{color:var(--muted); font-size:13px}
+
+    @media (max-width:1100px){
+      .app{grid-template-columns: 1fr; padding:12px}
+      video, canvas#overlay{width:100%; height:auto}
+    }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <!-- Camera -->
+    <div class="viewer">
+      <div class="viewer-header">
+        <div class="title">Human Vision AI — Real-time Mood</div>
+        <div class="controls">
+          <button id="startBtn" class="btn primary">Start</button>
+          <button id="stopBtn" class="btn ghost" disabled>Stop</button>
+        </div>
+      </div>
+
+      <div class="video-wrap">
+        <video id="video" autoplay playsinline muted></video>
+        <canvas id="overlay"></canvas>
+      </div>
+
+      <div class="status" id="status">Idle — press Start to begin</div>
+    </div>
+
+    <!-- Info / Metrics -->
+    <div class="panel">
+      <div class="card">
+        <div style="display:flex;justify-content:space-between;align-items:center">
+          <div><strong>Live Mood</strong><div style="font-size:13px;color:var(--muted)">Detected expression</div></div>
+          <div id="liveMood"><span class="badge neutral">—</span></div>
+        </div>
+
+        <div class="metrics" id="metrics">
+          <div class="metric"><div style="color:var(--muted)">Mouth open</div><div class="val" id="mouthVal">—</div></div>
+          <div class="metric"><div style="color:var(--muted)">Eye openness</div><div class="val" id="eyeVal">—</div></div>
+          <div class="metric"><div style="color:var(--muted)">Confidence</div><div class="val" id="confVal">—</div></div>
+          <div class="metric"><div style="color:var(--muted)">Head tilt</div><div class="val" id="headTiltVal">—</div></div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+          <div><strong>Tips</strong><div style="font-size:13px;color:var(--muted)">Actionable suggestions</div></div>
+          <div style="font-size:13px;color:var(--muted)" id="lastSeen">—</div>
+        </div>
+        <div id="tips">No detections yet.</div>
+        <div id="headAction" style="margin-top:8px;color:var(--muted);font-weight:600"></div>
+      </div>
+
+      <div class="card">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+          <div><strong>Recent</strong><div style="font-size:13px;color:var(--muted)">Last 20 frames</div></div>
+          <div style="font-size:13px;color:var(--muted)" id="count">0</div>
+        </div>
+        <div class="history" id="history"></div>
+      </div>
+    </div>
+
+    <!-- Quotes / Advice column -->
+    <div class="quotes-col">
+      <div class="card">
+        <div style="display:flex;justify-content:space-between;align-items:center">
+          <div><strong>Advice</strong><div class="small-muted">Contextual message for the detected emotion</div></div>
+          <div style="font-size:13px;color:var(--muted)" id="adviceTime">—</div>
+        </div>
+        <div class="quote-big" id="adviceBox">No advice yet — start the camera.</div>
+      </div>
+
+      <div class="card">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+          <div><strong>Quote Bank</strong><div class="small-muted">Helpful lines you can show or speak</div></div>
+          <div style="font-size:13px;color:var(--muted)"><button id="refreshQuotes" class="btn ghost">Shuffle</button></div>
+        </div>
+        <div class="quote-list" id="quoteList">
+          <!-- filled by JS -->
+        </div>
+      </div>
+
+      <div class="footer">Local demo — no data leaves your machine.</div>
+    </div>
+  </div>
+
+<script>
+/* Core functionality retained; UI wiring improved */
+const video = document.getElementById('video');
+const canvas = document.getElementById('overlay');
+const ctx = canvas.getContext('2d');
+const status = document.getElementById('status');
+const liveMood = document.getElementById('liveMood');
+const tips = document.getElementById('tips');
+const historyEl = document.getElementById('history');
+const mouthVal = document.getElementById('mouthVal');
+const eyeVal = document.getElementById('eyeVal');
+const confVal = document.getElementById('confVal');
+const headTiltVal = document.getElementById('headTiltVal');
+const lastSeen = document.getElementById('lastSeen');
+const countEl = document.getElementById('count');
+const adviceBox = document.getElementById('adviceBox');
+const adviceTime = document.getElementById('adviceTime');
+const quoteList = document.getElementById('quoteList');
+const refreshBtn = document.getElementById('refreshQuotes');
+
+let ws = null, sending = false, stream = null;
+let recent = [];
+
+canvas.width = 720; canvas.height = 540;
+
+/* Local quote pools (mirrors backend lists) */
+const QUOTES = {
+  motivational: [
+    "Keep going — you're stronger than you think.",
+    "Every step counts — don't give up.",
+    "You've got this — take a deep breath and try again."
+  ],
+  appreciation: [
+    "Great to see you smile — keep it up!",
+    "Love the positive energy!",
+    "Nice! Your smile is infectious."
+  ],
+  surprised: [
+    "That looks surprising — check if everything's okay.",
+    "They seem surprised — ask what's happening."
+  ],
+  angry: [
+    "User looks angry — suggest a calm break and deep breaths.",
+    "Try a soothing tone and open questions to de-escalate."
+  ],
+  neutral: [
+    "Keep a friendly, open tone.",
+    "Maintain eye contact and listen actively."
+  ]
+};
+
+function shuffleArr(a){ for(let i=a.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[a[i],a[j]]=[a[j],a[i]];} return a; }
+
+function colorClass(label){
+  if(!label) return 'neutral';
+  return ['happy','surprised','shocked','sad','angry','neutral'].includes(label) ? label : 'neutral';
+}
+
+function renderBadge(label, score){
+  const cls = colorClass(label);
+  const t = label ? `${label} (${Math.round(score*100)}%)` : '—';
+  return `<span class="badge ${cls}">${t}</span>`;
+}
+
+function drawPredictions(preds){
+  ctx.clearRect(0,0,canvas.width,canvas.height);
+  if(!preds || preds.length === 0){
+    liveMood.innerHTML = renderBadge('neutral', 0);
+    mouthVal.textContent = '—'; eyeVal.textContent = '—'; confVal.textContent = '—'; headTiltVal.textContent = '—';
+    adviceBox.textContent = 'No advice yet — start the camera.';
+    quoteList.innerHTML = '';
+    return;
+  }
+  let dominant=null, best=-1;
+  preds.forEach(p=>{
+    const b=p.box, lbl=p.top_emotion.label, sc=p.top_emotion.score;
+    if(sc>best){best=sc; dominant=lbl}
+    ctx.strokeStyle = 'rgba(16,24,40,0.8)'; ctx.lineWidth=2;
+    ctx.strokeRect(b.x, b.y, b.w, b.h);
+    ctx.fillStyle='rgba(16,24,40,0.75)'; ctx.font='14px Inter,Arial';
+    ctx.fillText(`${lbl} ${(sc*100).toFixed(0)}%`, b.x+8, Math.max(20, b.y+18));
+  });
+  liveMood.innerHTML = renderBadge(dominant, best);
+  // metrics (use first pred)
+  const p = preds[0];
+  mouthVal.textContent = p.mouth_open ? p.mouth_open.toFixed(3) : '—';
+  eyeVal.textContent = p.eye_open ? p.eye_open.toFixed(3) : '—';
+  confVal.textContent = (p.top_emotion.score*100).toFixed(0) + '%';
+  headTiltVal.textContent = p.head_tilt ? p.head_tilt.toFixed(3) : '—';
+  // history
+  const entry = {time: new Date().toLocaleTimeString(), label: p.top_emotion.label, score: p.top_emotion.score};
+  recent.unshift(entry); if(recent.length>20) recent.pop();
+  updateHistory();
+  lastSeen.textContent = new Date().toLocaleTimeString();
+  countEl.textContent = recent.length;
+
+  // Advice and quotes: prefer server advice if present
+  const advice = (p.advice && p.advice.length>0) ? p.advice : makeTipFor(preds);
+  adviceBox.textContent = advice;
+  adviceTime.textContent = new Date().toLocaleTimeString();
+
+  // Fill quote bank by label
+  const label = p.top_emotion.label || 'neutral';
+  const pool = QUOTES[label] || QUOTES['neutral'];
+  renderQuoteList(pool);
+}
+
+function updateHistory(){
+  historyEl.innerHTML = '';
+  recent.forEach(r=>{
+    const el = document.createElement('div'); el.className='hist-item';
+    el.innerHTML = `<div>${r.time} — <strong style="text-transform:capitalize">${r.label}</strong></div><div>${Math.round(r.score*100)}%</div>`;
+    historyEl.appendChild(el);
+  });
+}
+
+function renderQuoteList(pool){
+  const items = shuffleArr(pool.slice()).slice(0,4);
+  quoteList.innerHTML = items.map(q=>`<div class="quote-item">${q}</div>`).join('');
+}
+
+function makeTipFor(preds){
+  if(!preds || preds.length===0) return 'No face detected. Move into view.';
+  const label = preds[0].top_emotion.label;
+  if(label==='angry') return 'User looks angry — offer a calm tone and open questions.';
+  if(label==='sad') return 'User looks sad — respond with empathy and validate feelings.';
+  if(label==='happy') return 'User looks happy — reinforce and engage positively.';
+  if(label==='surprised' || label==='shocked') return 'User seems surprised — check context and clarify.';
+  return 'Neutral or mixed expressions.';
+}
+
+async function start(){
+  try{
+    stream = await navigator.mediaDevices.getUserMedia({video:{width:720,height:540}, audio:false});
+    video.srcObject = stream;
+    status.textContent = 'Camera active — connecting to backend...';
+    setupWebSocket();
+    document.getElementById('startBtn').disabled = true;
+    document.getElementById('stopBtn').disabled = false;
+  }catch(e){
+    status.textContent = 'Camera error: ' + (e.message || e);
+  }
+}
+
+function stop(){
+  if(stream){ stream.getTracks().forEach(t=>t.stop()); stream=null; }
+  if(ws){ ws.close(); ws=null; }
+  sending=false;
+  status.textContent = 'Stopped';
+  document.getElementById('startBtn').disabled=false;
+  document.getElementById('stopBtn').disabled=true;
+}
+
+function setupWebSocket(){
+  const protocol = (location.hostname==='localhost' || location.hostname==='127.0.0.1') ? 'ws' : 'wss';
+  const wsUrl = `${protocol}://${location.host}/ws`;
+  ws = new WebSocket(wsUrl);
+  ws.onopen = ()=>{ status.textContent = 'Connected — sending frames'; sending=true; sendLoop(); };
+  ws.onmessage = evt=>{
+    try{
+      const data = JSON.parse(evt.data);
+      if(data.error){ status.textContent = 'Server: '+data.error; return; }
+      const preds = data.predictions;
+      drawPredictions(preds);
+      tips.textContent = makeTipFor(preds);
+      status.textContent = 'Live';
+    }catch(e){
+      console.error('bad message',e);
+    }
+  };
+  ws.onclose = ()=>{ status.textContent='WebSocket closed'; sending=false; };
+  ws.onerror = (e)=>{ status.textContent='WebSocket error'; console.error(e); };
+}
+
+function captureFrame(){
+  const tmp = document.createElement('canvas'); tmp.width=720; tmp.height=540;
+  const tctx = tmp.getContext('2d'); tctx.drawImage(video,0,0,tmp.width,tmp.height);
+  return tmp.toDataURL('image/jpeg', 0.6);
+}
+
+function sendLoop(){
+  if(!sending || !ws || ws.readyState!==WebSocket.OPEN) return;
+  const frame = captureFrame();
+  ws.send(JSON.stringify({frame}));
+  setTimeout(sendLoop, 160);
+}
+
+refreshBtn.addEventListener('click', ()=> {
+  // refresh current quote list using last dominant label if available
+  if(recent.length>0){
+    const lastLabel = recent[0].label || 'neutral';
+    renderQuoteList(QUOTES[lastLabel] || QUOTES['neutral']);
+  } else {
+    renderQuoteList(QUOTES['neutral']);
+  }
+});
+
+document.getElementById('startBtn').addEventListener('click', start);
+document.getElementById('stopBtn').addEventListener('click', stop);
+</script>
+</body>
+</html>
+
