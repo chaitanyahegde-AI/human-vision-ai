@@ -33,3 +33,21 @@ ws.onmessage = evt => {
     console.error('bad message', e);
   }
 };
+
+// extend QUOTES
+QUOTES.disgust = [
+  "They seem uncomfortable — consider changing the topic.",
+  "A brief pause might help them reset."
+];
+QUOTES.contempt = [
+  "Keep tone neutral; avoid confrontational phrasing.",
+  "Acknowledge the point and move on calmly."
+];
+QUOTES.confused = [
+  "Try rephrasing or giving an example.",
+  "Check understanding by asking a simple question."
+];
+QUOTES.bored = [
+  "Engage with a short question to re-capture attention.",
+  "Try to vary your delivery or provide a concrete example."
+];
